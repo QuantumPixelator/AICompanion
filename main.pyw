@@ -46,6 +46,7 @@ class ConversationCompanion:
         self.load_config()
         self.conversation_history = []
         self.typing_buffer = ""
+        self.bold_mode = False  # Track whether we're currently in bold mode
 
         # Main container
         main = ctk.CTkFrame(self.root)
@@ -73,8 +74,17 @@ class ConversationCompanion:
                                          scrollbar_button_color="#555555", scrollbar_button_hover_color="#777777")
         self.conversation_text.pack(fill="both", expand=True, padx=50, pady=(5, 10))
         self.conversation_text.configure(state="disabled")  # Read-only
+        
+        # Configure tags for user, ai, and bold text
+        # Note: We access the underlying tkinter Text widget to set font for bold
         self.conversation_text.tag_config("user", foreground="white")
         self.conversation_text.tag_config("ai", foreground="cyan")
+        # Get the current font and create a bold version with the same size
+        current_font = self.conversation_text._textbox.cget("font")
+        import tkinter.font as tkfont
+        font_obj = tkfont.Font(font=current_font)
+        bold_font = tkfont.Font(family=font_obj.actual()["family"], size=font_obj.actual()["size"], weight="bold")
+        self.conversation_text._textbox.tag_config("ai_bold", foreground="cyan", font=bold_font)
 
         # Input frame
         input_frame = ctk.CTkFrame(main, fg_color="transparent")
@@ -203,6 +213,7 @@ class ConversationCompanion:
             self.conversation_text.configure(state="normal")
             self.conversation_text.insert("end", "AI: ", "ai")
             self.conversation_text.configure(state="disabled")
+            self.bold_mode = False  # Start in normal mode
             self.type_message_char(0)
             
         except Exception as e:
@@ -220,24 +231,50 @@ class ConversationCompanion:
             if msg["role"] == "user":
                 self.conversation_text.insert("end", f"You: {msg['content']}\n\n", "user")
             elif msg["role"] == "assistant":
-                self.conversation_text.insert("end", f"AI: {msg['content']}\n\n", "ai")
+                self.conversation_text.insert("end", "AI: ", "ai")
+                # Parse and display text with bold formatting
+                self.display_text_with_bold(msg['content'])
+                self.conversation_text.insert("end", "\n\n")
         
         self.conversation_text.configure(state="disabled")
         self.conversation_text.see("end")  # Scroll to bottom
 
+    def display_text_with_bold(self, text):
+        """Display text with bold formatting for text between ** markers"""
+        parts = text.split("**")
+        for i, part in enumerate(parts):
+            if i % 2 == 0:
+                # Even index = normal text
+                self.conversation_text.insert("end", part, "ai")
+            else:
+                # Odd index = bold text
+                self.conversation_text.insert("end", part, "ai_bold")
+
     def type_message_char(self, char_index):
         if char_index < len(self.typing_buffer):
-            char = self.typing_buffer[char_index]
-            self.conversation_history[-1]["content"] += char
-            self.conversation_text.configure(state="normal")
-            self.conversation_text.insert("end", char, "ai")
-            self.conversation_text.configure(state="disabled")
-            self.conversation_text.see("end")
-            self.root.after(15, self.type_message_char, char_index + 1)
+            # Check if we're at a ** marker
+            if char_index < len(self.typing_buffer) - 1 and self.typing_buffer[char_index:char_index+2] == "**":
+                # Toggle bold mode
+                self.bold_mode = not self.bold_mode
+                # Skip the ** characters (don't add to content or display)
+                self.root.after(15, self.type_message_char, char_index + 2)
+            else:
+                # Display the character with appropriate formatting
+                char = self.typing_buffer[char_index]
+                self.conversation_history[-1]["content"] += char
+                self.conversation_text.configure(state="normal")
+                tag = "ai_bold" if self.bold_mode else "ai"
+                self.conversation_text.insert("end", char, tag)
+                self.conversation_text.configure(state="disabled")
+                self.conversation_text.see("end")
+                self.root.after(15, self.type_message_char, char_index + 1)
         else:
-            # Typing complete - clear and redisplay with markdown formatting
+            # Typing complete - clear buffer and ensure history has clean version with ** markers
+            # Build clean content without ** markers for history
+            clean_content = self.typing_buffer.replace("**", "")
+            self.conversation_history[-1]["content"] = self.typing_buffer  # Keep ** in history for re-display
             self.typing_buffer = ""
-            self.display_conversation()
+            self.bold_mode = False
 
     def clear_chat(self):
         self.conversation_history = []
