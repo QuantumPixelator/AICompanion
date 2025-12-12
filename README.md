@@ -70,3 +70,7 @@ Click the "Clear" button at any time to start a fresh conversation.
 ## Enjoy!
 
 That's it! Start chatting and explore the different personalities to find your favorites.
+
+## License
+
+This project is licensed under the IDGAF License - see the [LICENSE](LICENSE) file for details.
