@@ -9,6 +9,31 @@ import os
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
 
+def create_tooltip(widget, text):
+    """Create a tooltip for a widget"""
+    def enter(event):
+        tooltip = tk.Toplevel()
+        tooltip.wm_overrideredirect(True)
+        tooltip.wm_geometry("+0+0")
+        
+        label = tk.Label(tooltip, text=text, background="#2b2b2b", foreground="white", 
+                        relief="solid", borderwidth=1, font=("Arial", 10))
+        label.pack()
+        
+        x = widget.winfo_rootx() + 20
+        y = widget.winfo_rooty() + widget.winfo_height() + 5
+        tooltip.wm_geometry(f"+{x}+{y}")
+        
+        widget.tooltip = tooltip
+    
+    def leave(event):
+        if hasattr(widget, 'tooltip'):
+            widget.tooltip.destroy()
+            del widget.tooltip
+    
+    widget.bind('<Enter>', enter)
+    widget.bind('<Leave>', leave)
+
 class ConversationCompanion:
     def __init__(self):
         self.root = ctk.CTk()
@@ -32,10 +57,16 @@ class ConversationCompanion:
         # Personality
         personality_frame = ctk.CTkFrame(main, fg_color="transparent")
         personality_frame.pack(pady=(5, 10))
-        self.personality_label = ctk.CTkLabel(personality_frame, text=f"Personality: {self.selected_personality['name']}", font=ctk.CTkFont(size=12))
-        self.personality_label.pack(side="left", padx=(0,10))
-        ctk.CTkButton(personality_frame, text="⚙️", command=self.manage_personalities, width=30, height=30,
-                      font=ctk.CTkFont(size=12)).pack(side="left", padx=(5,0))
+        ctk.CTkLabel(personality_frame, text="Personality:", font=ctk.CTkFont(size=12)).pack(side="left", padx=(0,10))
+        self.personality_var = ctk.StringVar(value=self.selected_personality['name'])
+        self.main_personality_combo = ctk.CTkComboBox(personality_frame, values=[p["name"] for p in self.personalities], 
+                                                     variable=self.personality_var, width=200, height=30,
+                                                     font=ctk.CTkFont(size=12), command=self.on_main_personality_select)
+        self.main_personality_combo.pack(side="left", padx=(0,10))
+        settings_btn = ctk.CTkButton(personality_frame, text="⚙️", command=self.manage_personalities, width=30, height=30,
+                      font=ctk.CTkFont(size=12))
+        settings_btn.pack(side="left")
+        create_tooltip(settings_btn, "Manage personalities (add, edit, delete)")
 
         # Conversation display
         self.conversation_text = ctk.CTkTextbox(main, wrap="word", font=ctk.CTkFont(size=14), padx=20, pady=20,
@@ -50,10 +81,15 @@ class ConversationCompanion:
         input_frame.pack(fill="x", padx=50, pady=(0, 10))
         self.message_entry = ctk.CTkEntry(input_frame, placeholder_text="Type your message here...", font=ctk.CTkFont(size=12))
         self.message_entry.pack(side="left", fill="x", expand=True)
-        ctk.CTkButton(input_frame, text="Send", command=self.send_message, width=80, height=30,
-                      font=ctk.CTkFont(size=12)).pack(side="left", padx=(10,0))
-        ctk.CTkButton(input_frame, text="Clear", command=self.clear_chat, width=80, height=30,
-                      font=ctk.CTkFont(size=12)).pack(side="left", padx=(10,0))
+        send_btn = ctk.CTkButton(input_frame, text="Send", command=self.send_message, width=80, height=30,
+                      font=ctk.CTkFont(size=12))
+        send_btn.pack(side="left", padx=(10,0))
+        create_tooltip(send_btn, "Send your message to the AI")
+        
+        clear_btn = ctk.CTkButton(input_frame, text="Clear", command=self.clear_chat, width=80, height=30,
+                      font=ctk.CTkFont(size=12))
+        clear_btn.pack(side="left", padx=(10,0))
+        create_tooltip(clear_btn, "Clear the conversation history")
         self.message_entry.bind("<Return>", lambda e: self.send_message())
 
     def send_message(self):
@@ -339,7 +375,8 @@ class ConversationCompanion:
         window = ctk.CTkToplevel(self.root)
         window.title("Manage Personalities")
         window.geometry("575x475")
-        window.attributes("-topmost", True)  # Always on top
+        window.transient(self.root)  # Make it a child window of main window
+        window.grab_set()  # Make it modal
         
         # Center the window on the main window
         window.update_idletasks()
@@ -353,18 +390,19 @@ class ConversationCompanion:
         y = main_y + (main_height - popup_height) // 2
         window.geometry(f"575x475+{x}+{y}")
         
+        # Handle window close
+        def on_closing():
+            window.grab_release()
+            window.destroy()
+        
+        window.protocol("WM_DELETE_WINDOW", on_closing)
+        
         # Dropdown for personalities
         ctk.CTkLabel(window, text="Select Personality", font=ctk.CTkFont(size=12)).pack(pady=(10,5))
-        self.personality_var = ctk.StringVar(value=self.personalities[0]["name"] if self.personalities else "")
-        self.personality_combo = ctk.CTkComboBox(window, values=[p["name"] for p in self.personalities], variable=self.personality_var, width=300, height=30,
+        self.popup_personality_var = ctk.StringVar(value=self.personalities[0]["name"] if self.personalities else "")
+        self.popup_personality_combo = ctk.CTkComboBox(window, values=[p["name"] for p in self.personalities], variable=self.popup_personality_var, width=300, height=30,
                         font=ctk.CTkFont(size=12), command=self.on_personality_select)
-        self.personality_combo.pack(pady=(0,10))
-        
-        # Prompt display
-        ctk.CTkLabel(window, text="Prompt", font=ctk.CTkFont(size=12)).pack(pady=(5,5))
-        self.prompt_text = ctk.CTkTextbox(window, wrap="word", font=ctk.CTkFont(size=12), height=100)
-        self.prompt_text.pack(fill="x", padx=20, pady=(0,10))
-        self.prompt_text.configure(state="disabled")
+        self.popup_personality_combo.pack(pady=(0,10))
         
         # Name entry
         ctk.CTkLabel(window, text="Name", font=ctk.CTkFont(size=12)).pack(pady=(5,5))
@@ -373,89 +411,50 @@ class ConversationCompanion:
         
         # Prompt entry
         ctk.CTkLabel(window, text="Prompt", font=ctk.CTkFont(size=12)).pack(pady=(5,5))
-        self.prompt_entry = ctk.CTkTextbox(window, wrap="word", font=ctk.CTkFont(size=12), height=80)
+        self.prompt_entry = ctk.CTkTextbox(window, wrap="word", font=ctk.CTkFont(size=12), height=220)
         self.prompt_entry.pack(fill="x", padx=20, pady=(0,10))
         
         # Buttons
         btn_frame = ctk.CTkFrame(window, fg_color="transparent")
         btn_frame.pack(fill="x", padx=20, pady=(0,10))
-        ctk.CTkButton(btn_frame, text="Add", command=self.add_personality).pack(side="left", padx=(0,5))
-        ctk.CTkButton(btn_frame, text="Edit", command=self.edit_personality).pack(side="left", padx=(0,5))
-        ctk.CTkButton(btn_frame, text="Delete", command=self.delete_personality, fg_color="#EF233C").pack(side="left", padx=(0,5))
+        add_btn = ctk.CTkButton(btn_frame, text="Add", command=self.add_personality)
+        add_btn.pack(side="left", padx=(0,5))
+        create_tooltip(add_btn, "Clear fields to add a new personality")
+        
         self.accept_btn = ctk.CTkButton(btn_frame, text="Accept", command=self.accept_personality)
-        self.accept_btn.pack(side="right")
+        self.accept_btn.pack(side="left", padx=(0,5))
+        create_tooltip(self.accept_btn, "Save the new personality from the fields")
         
-        # Bind focus events to disable/enable accept button
-        self.name_entry.bind("<FocusIn>", lambda e: self.accept_btn.configure(state="disabled"))
-        self.name_entry.bind("<FocusOut>", lambda e: self.accept_btn.configure(state="normal"))
-        self.prompt_entry.bind("<FocusIn>", lambda e: self.accept_btn.configure(state="disabled"))
-        self.prompt_entry.bind("<FocusOut>", lambda e: self.accept_btn.configure(state="normal"))
+        update_btn = ctk.CTkButton(btn_frame, text="Update", command=self.edit_personality)
+        update_btn.pack(side="left", padx=(0,5))
+        create_tooltip(update_btn, "Update the selected personality with field changes")
         
-        # Initialize with blank new personality fields
-        self.on_personality_select(self.personality_var.get())
-        self.name_entry.delete(0, tk.END)
-        self.prompt_entry.delete("1.0", "end")
+        delete_btn = ctk.CTkButton(btn_frame, text="Delete", command=self.delete_personality, fg_color="#EF233C")
+        delete_btn.pack(side="left", padx=(0,5))
+        create_tooltip(delete_btn, "Delete the selected personality")
+        
+        # Initialize with first personality selected
+        self.on_personality_select(self.popup_personality_var.get())
 
     def on_personality_select(self, name):
         for p in self.personalities:
             if p["name"] == name:
-                self.prompt_text.configure(state="normal")
-                self.prompt_text.delete("1.0", "end")
-                self.prompt_text.insert("1.0", p["prompt"])
-                self.prompt_text.configure(state="disabled")
                 self.name_entry.delete(0, tk.END)
+                self.name_entry.insert(0, p["name"])
                 self.prompt_entry.delete("1.0", "end")
+                self.prompt_entry.insert("1.0", p["prompt"])
                 break
 
     def add_personality(self):
-        try:
-            name = self.name_entry.get().strip()
-            prompt = self.prompt_entry.get("1.0", "end").strip()
-            
-            # Validation
-            if not name:
-                messagebox.showerror("Validation Error", "Please enter a personality name.")
-                return
-            
-            if not prompt:
-                messagebox.showerror("Validation Error", "Please enter a personality prompt.")
-                return
-            
-            if len(name) > 100:
-                messagebox.showerror("Validation Error", "Personality name is too long (max 100 characters).")
-                return
-            
-            if len(prompt) > 10000:
-                messagebox.showerror("Validation Error", "Personality prompt is too long (max 10000 characters).")
-                return
-            
-            if any(p["name"] == name for p in self.personalities):
-                messagebox.showerror("Duplicate Error", "A personality with this name already exists.")
-                return
-            
-            # Add personality
-            self.personalities.append({"name": name, "prompt": prompt})
-            self.save_personalities()
-            self.personality_combo.configure(values=[p["name"] for p in self.personalities])
-            self.personality_var.set(name)
-            self.on_personality_select(name)
-            
-            # Clear fields after adding
-            self.name_entry.delete(0, tk.END)
-            self.prompt_entry.delete("1.0", "end")
-            
-            # Enable accept button and set focus
-            self.accept_btn.configure(state="normal")
-            self.accept_btn.focus_set()
-            
-            messagebox.showinfo("Success", f"Personality '{name}' added successfully.")
-            
-        except Exception as e:
-            messagebox.showerror("Error", f"Failed to add personality: {str(e)}")
+        # Clear fields for new personality entry
+        self.name_entry.delete(0, tk.END)
+        self.prompt_entry.delete("1.0", "end")
+        # Enable accept button
+        self.accept_btn.configure(state="normal")
 
     def edit_personality(self):
         try:
-            name = self.personality_var.get()
+            name = self.popup_personality_var.get()
             new_name = self.name_entry.get().strip()
             new_prompt = self.prompt_entry.get("1.0", "end").strip()
             
@@ -495,9 +494,14 @@ class ConversationCompanion:
                 return
             
             self.save_personalities()
-            self.personality_combo.configure(values=[p["name"] for p in self.personalities])
-            self.personality_var.set(new_name)
+            self.popup_personality_combo.configure(values=[p["name"] for p in self.personalities])
+            self.popup_personality_var.set(new_name)
             self.on_personality_select(new_name)
+            
+            # Update main window dropdown
+            self.main_personality_combo.configure(values=[p["name"] for p in self.personalities])
+            if self.selected_personality["name"] == name:  # If editing the currently selected personality
+                self.personality_var.set(new_name)
             
             messagebox.showinfo("Success", f"Personality '{new_name}' updated successfully.")
             
@@ -506,7 +510,7 @@ class ConversationCompanion:
 
     def delete_personality(self):
         try:
-            name = self.personality_var.get()
+            name = self.popup_personality_var.get()
             
             if not name:
                 messagebox.showerror("Error", "No personality selected.")
@@ -530,9 +534,15 @@ class ConversationCompanion:
                 messagebox.showinfo("Default Restored", "Last personality deleted. Default personality restored.")
             
             self.save_personalities()
-            self.personality_combo.configure(values=[p["name"] for p in self.personalities])
-            self.personality_var.set(self.personalities[0]["name"])
+            self.popup_personality_combo.configure(values=[p["name"] for p in self.personalities])
+            self.popup_personality_var.set(self.personalities[0]["name"])
             self.on_personality_select(self.personalities[0]["name"])
+            
+            # Update main window dropdown
+            self.main_personality_combo.configure(values=[p["name"] for p in self.personalities])
+            if self.selected_personality["name"] == name:  # If deleting the currently selected personality
+                self.personality_var.set(self.personalities[0]["name"])
+                self.on_main_personality_select(self.personalities[0]["name"])
             
             messagebox.showinfo("Success", f"Personality '{name}' deleted successfully.")
             
@@ -541,33 +551,63 @@ class ConversationCompanion:
 
     def accept_personality(self):
         try:
-            name = self.personality_var.get()
+            name = self.name_entry.get().strip()
+            prompt = self.prompt_entry.get("1.0", "end").strip()
             
+            # Validation
             if not name:
-                messagebox.showerror("Error", "No personality selected.")
+                messagebox.showerror("Validation Error", "Please enter a personality name.")
+                return
+            
+            if not prompt:
+                messagebox.showerror("Validation Error", "Please enter a personality prompt.")
+                return
+            
+            if len(name) > 100:
+                messagebox.showerror("Validation Error", "Personality name is too long (max 100 characters).")
+                return
+            
+            if len(prompt) > 10000:
+                messagebox.showerror("Validation Error", "Personality prompt is too long (max 10000 characters).")
+                return
+            
+            if any(p["name"] == name for p in self.personalities):
+                messagebox.showerror("Duplicate Error", "A personality with this name already exists.")
+                return
+            
+            # Add personality
+            self.personalities.append({"name": name, "prompt": prompt})
+            self.save_personalities()
+            self.popup_personality_combo.configure(values=[p["name"] for p in self.personalities])
+            self.popup_personality_var.set(name)
+            
+            # Update main window dropdown
+            self.main_personality_combo.configure(values=[p["name"] for p in self.personalities])
+            self.personality_var.set(name)
+            
+            # Clear fields for next entry
+            self.name_entry.delete(0, tk.END)
+            self.prompt_entry.delete("1.0", "end")
+            
+            messagebox.showinfo("Success", f"Personality '{name}' added successfully.")
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to add personality: {str(e)}")
+
+    def on_main_personality_select(self, name):
+        try:
+            if not name:
                 return
             
             # Find and set personality
-            found = False
             for p in self.personalities:
                 if p["name"] == name:
                     self.selected_personality = p
-                    self.personality_label.configure(text=f"Personality: {name}")
                     self.save_config()
-                    found = True
                     break
-            
-            if not found:
-                messagebox.showerror("Error", f"Personality '{name}' not found.")
-                return
-            
-            # Close window
-            for widget in self.root.winfo_children():
-                if isinstance(widget, ctk.CTkToplevel):
-                    widget.destroy()
                     
         except Exception as e:
-            messagebox.showerror("Error", f"Failed to accept personality: {str(e)}")
+            messagebox.showerror("Error", f"Failed to select personality: {str(e)}")
 
 if __name__ == "__main__":
     app = ConversationCompanion()
